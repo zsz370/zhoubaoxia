@@ -66,7 +66,8 @@ export async function syncGithubAction(
       if (!savedPref) return { error: "保存 GitHub 用户名失败，请重新登录后重试" };
     }
 
-    const weekly = await fetchGithubEvents(username, bounds);
+    const fetched = await fetchGithubEvents(username, bounds);
+    const weekly = fetched.drafts;
 
     const imported = await saveGithubEvents(user.id, weekly);
     const events = await listEvents(user.id, bounds.from, bounds.to);
@@ -74,7 +75,22 @@ export async function syncGithubAction(
     await updateUserPrefs({ lastGithubSync: new Date().toISOString() });
 
     revalidatePath("/dashboard");
-    return { imported, username, events };
+
+    let message: string | undefined;
+    if (events.length === 0) {
+      if (!fetched.latestAt) {
+        message = "没有找到公开动态，可能你的活动都在私有仓库";
+      } else {
+        const latest = new Intl.DateTimeFormat("zh-CN", {
+          timeZone: "Asia/Shanghai",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date(fetched.latestAt));
+        message = `本周没有公开动态（共 ${fetched.total} 条，最近一次在 ${latest}）`;
+      }
+    }
+
+    return { imported, username, events, message };
   } catch (error) {
     // 限流或网络异常时优先返回已有数据，不让用户对着报错干等
     if (cached.length > 0) {

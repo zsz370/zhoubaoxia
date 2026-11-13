@@ -348,8 +348,10 @@ export function Workbench({
                 ))}
               </ul>
             ) : (
-              <p className="px-2 py-6 text-center text-[11.5px] text-muted">
-                还没有同步到 GitHub 动态，先用手动记录也能生成周报。
+              <p className="px-2 py-6 text-center text-[11.5px] leading-5 text-muted">
+                {demoMode
+                  ? "还没有同步到 GitHub 动态，先用手动记录也能生成周报。"
+                  : "没有可用的公开动态。私有仓库的提交不会出现在这里，用「记一笔」补充。"}
               </p>
             )}
           </div>

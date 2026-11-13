@@ -78,6 +78,14 @@ async function enrichAll(
   }
 }
 
+export interface GithubFetchResult {
+  drafts: GithubEventDraft[];
+  /** 接口返回的公开事件总数（近 90 天） */
+  total: number;
+  /** 最近一次公开活动时间 */
+  latestAt: string | null;
+}
+
 /**
  * 拉取用户公开动态，映射为提交 / PR / Issue。
  * 当前 GitHub 事件接口不再返回提交消息与 PR 标题，需要按需补全详情。
@@ -85,7 +93,7 @@ async function enrichAll(
 export async function fetchGithubEvents(
   login: string,
   range?: { from: string; to: string },
-): Promise<GithubEventDraft[]> {
+): Promise<GithubFetchResult> {
   const response = await fetch(
     `https://api.github.com/users/${encodeURIComponent(login)}/events/public?per_page=100`,
     {
@@ -102,7 +110,9 @@ export async function fetchGithubEvents(
   if (!response.ok) throw new Error("GitHub 同步失败，请稍后重试");
 
   const raw = (await response.json()) as RawEvent[];
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) return { drafts: [], total: 0, latestAt: null };
+
+  const latestAt = raw[0]?.created_at ?? null;
 
   const drafts: { draft: GithubEventDraft; url: string | null }[] = [];
 
@@ -167,5 +177,9 @@ export async function fetchGithubEvents(
 
   await enrichAll(enrichTargets);
 
-  return drafts.map((item) => item.draft);
+  return {
+    drafts: drafts.map((item) => item.draft),
+    total: raw.length,
+    latestAt,
+  };
 }
