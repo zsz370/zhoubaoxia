@@ -66,10 +66,7 @@ export async function syncGithubAction(
       if (!savedPref) return { error: "保存 GitHub 用户名失败，请重新登录后重试" };
     }
 
-    const drafts = await fetchGithubEvents(username);
-    const weekly = drafts.filter(
-      (draft) => draft.occurredAt >= bounds.from && draft.occurredAt <= bounds.to,
-    );
+    const weekly = await fetchGithubEvents(username, bounds);
 
     const imported = await saveGithubEvents(user.id, weekly);
     const events = await listEvents(user.id, bounds.from, bounds.to);
