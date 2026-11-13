@@ -88,7 +88,7 @@ async function generateWithLlm(input: GenerateRequest): Promise<string> {
     body: JSON.stringify({
       model: process.env.LLM_MODEL,
       temperature: 0.3,
-      max_tokens: 1200,
+      max_tokens: 2500,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
