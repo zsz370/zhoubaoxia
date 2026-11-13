@@ -327,7 +327,7 @@ export function Workbench({
               <p className="mt-2 px-1 text-[10.5px] text-brand-deep">{syncNote}</p>
             ) : null}
             {events.length > 0 ? (
-              <ul className="mt-2 space-y-0.5">
+              <ul className="scroll-thin mt-2 max-h-[500px] space-y-0.5 overflow-y-auto pr-1">
                 {events.map((item) => (
                   <li
                     key={item.id}
@@ -354,6 +354,12 @@ export function Workbench({
                   : "没有可用的公开动态。私有仓库的提交不会出现在这里，用「记一笔」补充。"}
               </p>
             )}
+
+            {events.length > 10 ? (
+              <p className="mt-1 px-1 text-[10px] text-muted/70">
+                共 {events.length} 条，可在列表内滚动查看
+              </p>
+            ) : null}
           </div>
 
           <form onSubmit={addNote} className="mt-4 flex gap-2">
@@ -378,7 +384,7 @@ export function Workbench({
             </button>
           </form>
 
-          <ul className="mt-3 space-y-2">
+          <ul className="scroll-thin mt-3 max-h-[460px] space-y-2 overflow-y-auto pr-1">
             {notes.length === 0 ? (
               <li className="rounded-xl border border-dashed border-line bg-paper/40 px-4 py-8 text-center text-xs text-muted">
                 还没有记录。先写下今天做的一件事。
@@ -407,6 +413,12 @@ export function Workbench({
               ))
             )}
           </ul>
+
+          {notes.length > 10 ? (
+            <p className="mt-1 text-[10px] text-muted/70">
+              共 {notes.length} 条，可在列表内滚动查看
+            </p>
+          ) : null}
 
           <p className="mt-4 border-t border-line pt-3 text-[11px] leading-5 text-muted/80">
             {demoMode
