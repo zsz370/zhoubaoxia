@@ -11,6 +11,7 @@ export interface SessionUser {
   name: string | null;
   email: string | null;
   githubUsername: string | null;
+  githubLastSync: string | null;
 }
 
 export function isAuthConfigured(): boolean {
@@ -37,12 +38,17 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       typeof prefs.githubUsername === "string" && prefs.githubUsername
         ? prefs.githubUsername
         : null;
+    const githubLastSync =
+      typeof prefs.lastGithubSync === "string" && prefs.lastGithubSync
+        ? prefs.lastGithubSync
+        : null;
 
     return {
       id: user.$id,
       name: user.name || null,
       email: user.email || null,
       githubUsername,
+      githubLastSync,
     };
   } catch (error) {
     console.error("[auth] getSessionUser failed", error);

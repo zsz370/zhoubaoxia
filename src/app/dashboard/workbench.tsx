@@ -134,9 +134,10 @@ export function Workbench({
     setUsername(result.username);
     setEvents(result.events);
     setSyncNote(
-      result.imported > 0
-        ? `已同步 ${result.imported} 条新动态`
-        : "本周暂无新的公开动态",
+      result.message ??
+        (result.imported > 0
+          ? `已同步 ${result.imported} 条新动态`
+          : "本周暂无新的公开动态"),
     );
   }
 

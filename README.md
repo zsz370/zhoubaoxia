@@ -91,6 +91,18 @@ src/
 scripts/appwrite-setup.mjs  # 表结构初始化脚本
 ```
 
+## 常见问题
+
+### GitHub 同步提示「接口限流」
+
+GitHub 匿名接口按**服务器出口 IP** 限制 60 次/小时，多人共用时很容易触发。在 `.env.local` 配置一个只读 Token 即可提升到 5000 次/小时：
+
+1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token
+2. 不需要勾选任何 scope（只读公开数据）
+3. 把生成的 Token 填到 `GITHUB_TOKEN=`，重启服务
+
+未配置 Token 时也不会中断使用：同一用户 10 分钟内不会重复请求，限流时会自动回退到上次同步的数据。
+
 ## 安全说明
 
 - 所有密钥只存在于服务端环境变量，`.env.local` 已被 `.gitignore` 忽略

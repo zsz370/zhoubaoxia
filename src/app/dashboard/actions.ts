@@ -22,16 +22,42 @@ import { getWeekBoundsUTC, getWeekLabel, todayISO } from "@/lib/week";
 type Result<T> = T | { error: string };
 
 const GITHUB_LOGIN_PATTERN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
+const SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 
 export async function syncGithubAction(
   usernameInput: string,
-): Promise<Result<{ imported: number; username: string; events: GithubEvent[] }>> {
+): Promise<
+  Result<{
+    imported: number;
+    username: string;
+    events: GithubEvent[];
+    message?: string;
+  }>
+> {
   const user = await getSessionUser();
   if (!user) return { error: "请先登录" };
 
   const username = (usernameInput.trim().replace(/^@/, "") || user.githubUsername || "");
   if (!GITHUB_LOGIN_PATTERN.test(username)) {
     return { error: "GitHub 用户名格式不对，只填用户名，例如 torvalds" };
+  }
+
+  const bounds = getWeekBoundsUTC();
+  const cached = await listEvents(user.id, bounds.from, bounds.to);
+
+  // 同一用户 10 分钟内不重复请求 GitHub，避免把共享额度打光
+  const lastSync = user.githubLastSync ? Date.parse(user.githubLastSync) : 0;
+  if (
+    username === user.githubUsername &&
+    cached.length > 0 &&
+    Date.now() - lastSync < SYNC_COOLDOWN_MS
+  ) {
+    return {
+      imported: 0,
+      username,
+      events: cached,
+      message: "刚刚同步过，先显示最近一次结果",
+    };
   }
 
   try {
@@ -41,7 +67,6 @@ export async function syncGithubAction(
     }
 
     const drafts = await fetchGithubEvents(username);
-    const bounds = getWeekBoundsUTC();
     const weekly = drafts.filter(
       (draft) => draft.occurredAt >= bounds.from && draft.occurredAt <= bounds.to,
     );
@@ -49,9 +74,21 @@ export async function syncGithubAction(
     const imported = await saveGithubEvents(user.id, weekly);
     const events = await listEvents(user.id, bounds.from, bounds.to);
 
+    await updateUserPrefs({ lastGithubSync: new Date().toISOString() });
+
     revalidatePath("/dashboard");
     return { imported, username, events };
   } catch (error) {
+    // 限流或网络异常时优先返回已有数据，不让用户对着报错干等
+    if (cached.length > 0) {
+      return {
+        imported: 0,
+        username,
+        events: cached,
+        message: "GitHub 暂时限流，先显示上次同步的内容",
+      };
+    }
+
     return {
       error: error instanceof Error ? error.message : "同步失败，请稍后重试",
     };
