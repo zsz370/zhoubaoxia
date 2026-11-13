@@ -50,7 +50,7 @@ npm run dev
 | `LLM_BASE_URL` | 否 | OpenAI 兼容接口地址，阿里云：`https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | `LLM_API_KEY` | 否 | 模型 Key；不配置时使用内置模板兜底 |
 | `LLM_MODEL` | 否 | 模型名，例如 `deepseek-v4.1-flash` |
-| `GITHUB_TOKEN` | 否 | 只读 Token，用于提高 GitHub 公开动态接口的限额（匿名 60 次/小时） |
+| `GITHUB_TOKEN` | 否 | 只读 Token，用于提高接口限额并启用「提交搜索」补全（不配置时只能读到事件流） |
 
 ## Appwrite 配置
 
@@ -96,6 +96,8 @@ scripts/appwrite-setup.mjs  # 表结构初始化脚本
 ### GitHub 同步成功但没有数据
 
 公开事件接口只包含**公开仓库**的活动（近 90 天），私有仓库的提交、私有分支推送都不会出现。如果你主要在私有仓库工作，同步结果为空是正常现象，用「记一笔」手动补充即可。另外，同步只统计**当前周**（周一至周日）内的动态，界面会提示最近一次公开活动的时间。
+
+GitHub 的事件流本身也会延迟甚至漏掉推送，因此同步时会额外调用**提交搜索**接口按作者和日期补齐，这需要配置 `GITHUB_TOKEN`。没有 Token 时只能读到事件流，可能看不到刚推送的提交。
 
 ### GitHub 同步提示「接口限流」
 

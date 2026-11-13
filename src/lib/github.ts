@@ -24,8 +24,18 @@ interface RawEvent {
   };
 }
 
+interface SearchCommitItem {
+  sha: string;
+  commit?: {
+    message?: string;
+    committer?: { date?: string };
+  };
+  repository?: { full_name?: string };
+}
+
 const ENRICH_LIMIT = 25;
 const ENRICH_CONCURRENCY = 5;
+const MAX_DRAFTS = 60;
 
 export function eventRowId(draft: GithubEventDraft): string {
   return createHash("sha256")
@@ -44,7 +54,12 @@ function githubHeaders(): Record<string, string> {
   };
 }
 
-async function fetchAppTitle(url: string): Promise<string | null> {
+function firstLine(message: string, fallback: string): string {
+  const line = message.split("\n")[0].trim().slice(0, 140);
+  return line || fallback;
+}
+
+async function fetchDetailTitle(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: githubHeaders(),
@@ -52,13 +67,8 @@ async function fetchAppTitle(url: string): Promise<string | null> {
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return null;
-    const data = (await response.json()) as {
-      title?: string;
-      commit?: { message?: string };
-    };
-    const title = data.title ?? data.commit?.message;
-    if (!title) return null;
-    return String(title).split("\n")[0].trim().slice(0, 140) || null;
+    const data = (await response.json()) as { title?: string };
+    return data.title ? data.title.trim().slice(0, 140) : null;
   } catch {
     return null;
   }
@@ -71,10 +81,62 @@ async function enrichAll(
     const batch = items.slice(index, index + ENRICH_CONCURRENCY);
     await Promise.all(
       batch.map(async (item) => {
-        const title = await fetchAppTitle(item.url);
+        const title = await fetchDetailTitle(item.url);
         if (title) item.draft.title = title;
       }),
     );
+  }
+}
+
+/**
+ * 提交搜索：事件流经常延迟或缺失推送，用搜索接口按作者 + 日期补齐提交。
+ * 失败时静默返回空数组，不影响主流程。
+ */
+async function fetchSearchCommits(
+  login: string,
+  range?: { from: string; to: string },
+): Promise<GithubEventDraft[]> {
+  if (!range) return [];
+
+  const dayFmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const start = dayFmt.format(new Date(range.from));
+  const end = dayFmt.format(new Date(range.to));
+  const query = `author:${login} committer-date:${start}..${end}`;
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/search/commits?q=${encodeURIComponent(query)}&sort=committer-date&order=desc&per_page=50`,
+      {
+        headers: githubHeaders(),
+        cache: "no-store",
+        signal: AbortSignal.timeout(12_000),
+      },
+    );
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as { items?: SearchCommitItem[] };
+    return (data.items ?? []).flatMap((item) => {
+      const repo = item.repository?.full_name ?? "";
+      const message = item.commit?.message ?? "";
+      const occurredAt = item.commit?.committer?.date;
+      if (!repo || !occurredAt) return [];
+      return [
+        {
+          type: "commit" as const,
+          title: firstLine(message, "提交代码"),
+          repo,
+          ref: item.sha.slice(0, 7),
+          occurredAt: new Date(occurredAt).toISOString(),
+        },
+      ];
+    });
+  } catch {
+    return [];
   }
 }
 
@@ -88,7 +150,7 @@ export interface GithubFetchResult {
 
 /**
  * 拉取用户公开动态，映射为提交 / PR / Issue。
- * 当前 GitHub 事件接口不再返回提交消息与 PR 标题，需要按需补全详情。
+ * 事件流不返回提交消息与 PR 标题，需补全详情；推送事件延迟时用提交搜索补齐。
  */
 export async function fetchGithubEvents(
   login: string,
@@ -110,13 +172,12 @@ export async function fetchGithubEvents(
   if (!response.ok) throw new Error("GitHub 同步失败，请稍后重试");
 
   const raw = (await response.json()) as RawEvent[];
-  if (!Array.isArray(raw)) return { drafts: [], total: 0, latestAt: null };
+  const events = Array.isArray(raw) ? raw : [];
+  const latestFromEvents = events[0]?.created_at ?? null;
 
-  const latestAt = raw[0]?.created_at ?? null;
+  const pending: { draft: GithubEventDraft; url: string | null }[] = [];
 
-  const drafts: { draft: GithubEventDraft; url: string | null }[] = [];
-
-  for (const event of raw) {
+  for (const event of events) {
     if (range && (event.created_at < range.from || event.created_at > range.to)) {
       continue;
     }
@@ -127,7 +188,7 @@ export async function fetchGithubEvents(
     if (event.type === "PushEvent") {
       const sha = String(payload.head ?? "").slice(0, 7);
       const branch = String(payload.ref ?? "").replace("refs/heads/", "");
-      drafts.push({
+      pending.push({
         draft: {
           type: "commit",
           title: branch ? `推送到 ${branch}` : "代码推送",
@@ -144,7 +205,7 @@ export async function fetchGithubEvents(
     }
 
     if (event.type === "PullRequestEvent" && payload.pull_request?.number) {
-      drafts.push({
+      pending.push({
         draft: {
           type: "pr",
           title: `PR #${payload.pull_request.number}`,
@@ -158,7 +219,7 @@ export async function fetchGithubEvents(
     }
 
     if (event.type === "IssuesEvent" && payload.issue?.number) {
-      drafts.push({
+      pending.push({
         draft: {
           type: "issue",
           title: `Issue #${payload.issue.number}`,
@@ -171,15 +232,39 @@ export async function fetchGithubEvents(
     }
   }
 
-  const enrichTargets = drafts
+  const enrichTargets = pending
     .filter((item): item is { draft: GithubEventDraft; url: string } => Boolean(item.url))
     .slice(0, ENRICH_LIMIT);
 
+  const searchCommits = await fetchSearchCommits(login, range);
+
   await enrichAll(enrichTargets);
 
+  const merged = new Map<string, GithubEventDraft>();
+
+  for (const item of pending) {
+    merged.set(`${item.draft.type}|${item.draft.repo}|${item.draft.ref}`, item.draft);
+  }
+
+  // 搜索结果里的提交信息更准确，覆盖同一 sha 的「推送到分支」占位标题
+  for (const commit of searchCommits) {
+    merged.set(`${commit.type}|${commit.repo}|${commit.ref}`, commit);
+  }
+
+  const drafts = [...merged.values()]
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .slice(0, MAX_DRAFTS);
+
+  const latestAt =
+    drafts[0]?.occurredAt && latestFromEvents
+      ? drafts[0].occurredAt > latestFromEvents
+        ? drafts[0].occurredAt
+        : latestFromEvents
+      : (drafts[0]?.occurredAt ?? latestFromEvents);
+
   return {
-    drafts: drafts.map((item) => item.draft),
-    total: raw.length,
+    drafts,
+    total: Math.max(events.length, searchCommits.length),
     latestAt,
   };
 }
