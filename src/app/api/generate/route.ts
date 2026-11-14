@@ -79,6 +79,8 @@ async function generateWithLlm(input: GenerateRequest): Promise<string> {
       )
       .join("\n") || "（无）";
 
+  const isDashScope = baseUrl.includes("dashscope");
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -88,7 +90,9 @@ async function generateWithLlm(input: GenerateRequest): Promise<string> {
     body: JSON.stringify({
       model: process.env.LLM_MODEL,
       temperature: 0.3,
-      max_tokens: 2500,
+      max_tokens: 4000,
+      // 推理模型默认会先消耗大量 token 思考，长提示下可能挤掉正文，这里关闭思考
+      ...(isDashScope ? { enable_thinking: false } : {}),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -97,7 +101,7 @@ async function generateWithLlm(input: GenerateRequest): Promise<string> {
         },
       ],
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(90_000),
   });
 
   if (!response.ok) {
