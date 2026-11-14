@@ -8,6 +8,10 @@ import { demoReport } from "@/lib/sample";
 import { getShare } from "@/lib/store";
 import type { Perspective } from "@/lib/types";
 
+export const metadata = {
+  robots: { index: false, follow: false },
+};
+
 export const dynamic = "force-dynamic";
 
 interface ShareData {

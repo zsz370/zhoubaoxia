@@ -37,9 +37,9 @@ const ENRICH_LIMIT = 25;
 const ENRICH_CONCURRENCY = 5;
 const MAX_DRAFTS = 60;
 
-export function eventRowId(draft: GithubEventDraft): string {
+export function eventRowId(userId: string, draft: GithubEventDraft): string {
   return createHash("sha256")
-    .update(`${draft.type}|${draft.repo}|${draft.ref}|${draft.title}`)
+    .update(`${userId}|${draft.type}|${draft.repo}|${draft.ref}|${draft.title}`)
     .digest("hex")
     .slice(0, 32);
 }

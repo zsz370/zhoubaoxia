@@ -13,6 +13,10 @@ export async function withRetry<T>(
       return await task();
     } catch (error) {
       lastError = error;
+      const status = (error as { code?: number }).code;
+      if (typeof status === "number" && status >= 400 && status < 500) {
+        throw error;
+      }
       if (attempt < attempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
       }

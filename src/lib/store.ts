@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { ID, Permission, Query, Role } from "node-appwrite";
 import { APPWRITE_DATABASE_ID, TABLES, adminTables } from "./appwrite";
 import { eventRowId, type GithubEventDraft } from "./github";
@@ -139,7 +140,7 @@ export async function saveGithubEvents(
           await tables.createRow(
             APPWRITE_DATABASE_ID,
             TABLES.events,
-            eventRowId(draft),
+            eventRowId(userId, draft),
             {
               userId,
               type: draft.type,
@@ -289,9 +290,7 @@ export async function createShare(
     String(report.weekEnd),
   )}`;
 
-  const slug = `r${Date.now().toString(36)}${Math.floor(Math.random() * 1e6)
-    .toString(36)
-    .padStart(4, "0")}`;
+  const slug = `r${randomBytes(16).toString("hex")}`;
 
   await adminTables().createRow(
     APPWRITE_DATABASE_ID,
@@ -327,7 +326,7 @@ export interface ShareDetail {
 }
 
 export async function getShare(slug: string): Promise<ShareDetail | null> {
-  if (!/^[a-z0-9]{6,32}$/.test(slug)) return null;
+  if (!/^[a-z0-9]{6,40}$/.test(slug)) return null;
 
   const row = await getRow(TABLES.shares, slug);
   if (!row) return null;
